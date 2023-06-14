@@ -1,0 +1,162 @@
+package:
+  name: php
+  version: 8.2.7
+  epoch: 1
+  description: "the PHP programming language"
+  copyright:
+    - license: PHP-3.01
+  dependencies:
+    runtime:
+      - libxml2
+
+environment:
+  contents:
+    repositories:
+      - https://packages.wolfi.dev/bootstrap/stage3
+      - https://packages.wolfi.dev/os
+    keyring:
+      - https://packages.wolfi.dev/bootstrap/stage3/wolfi-signing.rsa.pub
+      - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+
+    packages:
+      - build-base
+      - busybox
+      - file
+      - bison
+      - libtool
+      - ca-certificates-bundle
+      - bzip2-dev
+      - libxml2-dev
+      - curl-dev
+      - openssl-dev
+      - readline-dev
+      - sqlite-dev
+      - libsodium-dev
+      - libpng-dev
+      - libjpeg-dev
+      - libavif-dev
+      - libwebp-dev
+      - libxpm-dev
+      - libx11-dev
+      - freetype-dev
+      - gmp-dev
+      - icu-dev
+      - openldap-dev
+      - oniguruma-dev
+      - libxslt-dev
+
+pipeline:
+  - uses: fetch
+    with:
+      uri: https://www.php.net/distributions/php-${{package.version}}.tar.gz
+      expected-sha256: 7046f939f0e5116285341d55c06af1d50907e107ac2c70defc32ef880f88cde4
+      extract: false
+
+  - name: Prepare Build Folder
+    runs: |
+      set -x
+      mv php-${{package.version}}.tar.gz $HOME/
+      tar zxf $HOME/php-${{package.version}}.tar.gz
+
+  - name: Configure
+    runs: |
+      set -x
+      export PHP_BUILD_HOME=$HOME/php-${{package.version}}
+      cd $PHP_BUILD_HOME
+      ./configure \
+        --prefix=${{targets.destdir}} \
+        --enable-cli \
+        --with-curl \
+        --with-openssl \
+        --with-readline \
+        --with-zlib \
+        --with-sodium \
+        --enable-fpm \
+        --with-pear \
+        --enable-gd \
+            --with-avif \
+            --with-freetype \
+            --with-jpeg \
+            --with-webp \
+            --with-xpm \
+            --disable-gd-jis-conv \
+        --with-libxml \
+        --enable-phar \
+        --enable-mbstring \
+        --enable-mysqlnd \
+        --enable-pdo \
+            --with-pdo-mysql=mysqlnd \
+            --with-pdo-sqlite \
+        --enable-pcntl \
+        --enable-sockets \
+        --with-bz2 \
+        --enable-calendar \
+        --enable-exif  \
+        --with-gettext  \
+        --with-gmp  \
+        --enable-intl  \
+        --with-ldap  \
+        --enable-opcache  \
+        --enable-soap  \
+        --with-xsl 
+
+  - uses: autoconf/make
+    with:
+      dir: $HOME/php-${{package.version}}
+
+  - uses: autoconf/make-install
+    with:
+      dir: $HOME/php-${{package.version}}
+
+  - uses: strip
+
+subpackages:
+  - name: php-dev
+    description: PHP 8.2 development headers
+    pipeline:
+      - uses: split/dev
+
+  - name: php-cgi
+    description: PHP 8.2 CGI
+    pipeline:
+      - runs: |
+          mkdir -p ${{targets.subpkgdir}}/usr/bin
+          mv ${{targets.destdir}}/bin/php-cgi ${{targets.subpkgdir}}/usr/bin/
+
+  - name: php-dbg
+    description: Interactive PHP Debugger
+    pipeline:
+      - runs: |
+          mkdir -p ${{targets.subpkgdir}}/usr/bin
+          mv ${{targets.destdir}}/bin/phpdbg ${{targets.subpkgdir}}/usr/bin/
+
+  - name: php-fpm
+    description: PHP 8.2 FastCGI Process Manager (FPM)
+    pipeline:
+      - runs: |
+          mkdir -p ${{targets.subpkgdir}}/usr/bin
+          mv ${{targets.destdir}}/sbin/php-fpm ${{targets.subpkgdir}}/usr/bin/
+          mkdir -p ${{targets.subpkgdir}}/etc/php-fpm.d
+          mv ${{targets.destdir}}/etc/php-fpm.conf.default ${{targets.subpkgdir}}/etc/php-fpm.conf
+          sed -i 's/\/home\/build\/melange-out\/php//g' ${{targets.subpkgdir}}/etc/php-fpm.conf
+          mv ${{targets.destdir}}/etc/php-fpm.d/www.conf.default ${{targets.subpkgdir}}/etc/php-fpm.d/www.conf \
+          && { \
+          	echo '[global]'; \
+          	echo 'error_log = /proc/self/fd/2'; \
+            echo 'daemonize = no'; \
+          	echo; \
+          	echo '[www]'; \
+            echo 'listen = [::]:9000'; \
+          	echo 'access.log = /proc/self/fd/2'; \
+            echo; \
+          	echo 'clear_env = no'; \
+          	echo; \
+          	echo 'catch_workers_output = yes'; \
+            echo; \
+          	echo 'decorate_workers_output = no'; \
+          } | tee ${{targets.subpkgdir}}/etc/php-fpm.d/zz-apko.conf
+
+update:
+  enabled: true
+  release-monitor:
+    identifier: 3627
