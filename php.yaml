@@ -44,6 +44,7 @@ environment:
       - openldap-dev
       - oniguruma-dev
       - libxslt-dev
+      - zip
 
 pipeline:
   - uses: fetch
@@ -65,40 +66,48 @@ pipeline:
       cd $PHP_BUILD_HOME
       ./configure \
         --prefix=${{targets.destdir}} \
+        --libdir=${{targets.destdir}}/lib/php \
+        --datadir=${{targets.destdir}}/usr/share/php \
+        --sysconfdir=${{targets.destdir}}/etc/php \
+        --localstatedir=${{targets.destdir}}/var \
+        --with-layout=GNU \
+        --with-pic \
+        --with-config-file-path=${{targets.destdir}}/etc/php \
+        --with-config-file-scan-dir=${{targets.destdir}}/etc/php/conf.d \
         --enable-cli \
-        --with-curl \
-        --with-openssl \
+        --with-curl=shared \
+        --with-openssl=shared \
         --with-readline \
-        --with-zlib \
-        --with-sodium \
+        --with-zlib=shared \
+        --with-sodium=shared \
         --enable-fpm \
         --with-pear \
-        --enable-gd \
+        --enable-gd=shared \
             --with-avif \
             --with-freetype \
             --with-jpeg \
             --with-webp \
             --with-xpm \
             --disable-gd-jis-conv \
-        --with-libxml \
-        --enable-phar \
-        --enable-mbstring \
-        --enable-mysqlnd \
-        --enable-pdo \
-            --with-pdo-mysql=mysqlnd \
-            --with-pdo-sqlite \
-        --enable-pcntl \
-        --enable-sockets \
-        --with-bz2 \
-        --enable-calendar \
-        --enable-exif  \
-        --with-gettext  \
-        --with-gmp  \
-        --enable-intl  \
-        --with-ldap  \
-        --enable-opcache  \
-        --enable-soap  \
-        --with-xsl 
+        --with-libxml=shared \
+        --enable-phar=shared \
+        --enable-mbstring=shared \
+        --enable-mysqlnd=shared \
+        --enable-pdo=shared \
+            --with-pdo-mysql=shared,mysqlnd \
+            --with-pdo-sqlite=shared \
+        --enable-pcntl=shared \
+        --enable-sockets=shared \
+        --with-bz2=shared \
+        --enable-calendar=shared \
+        --enable-exif=shared  \
+        --with-gettext=shared  \
+        --with-gmp=shared  \
+        --enable-intl=shared  \
+        --with-ldap=shared  \
+        --enable-opcache=shared  \
+        --enable-soap=shared  \
+        --with-xsl=shared
 
   - uses: autoconf/make
     with:
@@ -110,7 +119,52 @@ pipeline:
 
   - uses: strip
 
+  - name: Copy configuration
+    runs: |
+      mv $HOME/php-${{package.version}}/php.ini-production ${{targets.destdir}}/etc/php/php.ini
+      sed -i 's/\/home\/build\/melange-out\/php//g' ${{targets.destdir}}/etc/php/php.ini
+
+data:
+  - name: extensions
+    items:
+      bz2: Bzip2
+      curl: cURL
+      gd: GD imaging
+      gmp: GNU GMP support
+      ldap: LDAP
+      mysqlnd: MySQLnd
+      openssl: OpenSSL
+      pdo_mysql: MySQL driver for PDO
+      pdo_sqlite: SQLite 3.x driver for PDO
+      soap: SOAP
+      sodium: Sodium
+      zlib: Zlib
+      calendar: Calendar
+      exif: EXIF
+      gettext: GetText
+      intl: Internationalization
+      mbstring: Multibyte String Functions
+      opcache: Opcache
+      pcntl: pcntl
+      pdo: PHP Data Objects
+      phar: PHP Archive
+      sockets: Sockets
+      xsl: XSL
+
 subpackages:
+
+  - range: extensions
+    name: "php-${{range.key}}"
+    description: "The ${{range.value}} extension"
+    pipeline:
+      - runs: |
+          set -x
+          EXTENSION_DIR=`${{targets.destdir}}/bin/php-config --extension-dir`
+          DEST_DIR=`echo $EXTENSION_DIR | sed 's/php/php-${{range.key}}/g'`
+          mkdir -p $DEST_DIR
+          mv "$EXTENSION_DIR/${{range.key}}.so"  "$DEST_DIR/${{range.key}}.so"
+
+  #Executables
   - name: php-dev
     description: PHP 8.2 development headers
     pipeline:
@@ -134,12 +188,12 @@ subpackages:
     description: PHP 8.2 FastCGI Process Manager (FPM)
     pipeline:
       - runs: |
-          mkdir -p ${{targets.subpkgdir}}/usr/bin
+          set -x
+          mkdir -p ${{targets.subpkgdir}}/usr/bin ${{targets.subpkgdir}}/etc/php/php-fpm.d
           mv ${{targets.destdir}}/sbin/php-fpm ${{targets.subpkgdir}}/usr/bin/
-          mkdir -p ${{targets.subpkgdir}}/etc/php-fpm.d
-          mv ${{targets.destdir}}/etc/php-fpm.conf.default ${{targets.subpkgdir}}/etc/php-fpm.conf
-          sed -i 's/\/home\/build\/melange-out\/php//g' ${{targets.subpkgdir}}/etc/php-fpm.conf
-          mv ${{targets.destdir}}/etc/php-fpm.d/www.conf.default ${{targets.subpkgdir}}/etc/php-fpm.d/www.conf \
+          mv ${{targets.destdir}}/etc/php/php-fpm.conf.default ${{targets.subpkgdir}}/etc/php/php-fpm.conf
+          sed -i 's/\/home\/build\/melange-out\/php//g' ${{targets.subpkgdir}}/etc/php/php-fpm.conf
+          mv ${{targets.destdir}}/etc/php/php-fpm.d/www.conf.default ${{targets.subpkgdir}}/etc/php/php-fpm.d/www.conf \
           && { \
           	echo '[global]'; \
           	echo 'error_log = /proc/self/fd/2'; \
@@ -154,7 +208,7 @@ subpackages:
           	echo 'catch_workers_output = yes'; \
             echo; \
           	echo 'decorate_workers_output = no'; \
-          } | tee ${{targets.subpkgdir}}/etc/php-fpm.d/zz-apko.conf
+          } | tee ${{targets.subpkgdir}}/etc/php/php-fpm.d/zz-apko.conf
 
 update:
   enabled: true

@@ -2,8 +2,8 @@ contents:
   keyring:
     - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
   repositories:
-    - '@local /work/packages'
     - https://packages.wolfi.dev/os
+    - '@local /work/packages'
   packages:
     - wolfi-baselayout
     - ca-certificates-bundle
@@ -35,11 +35,10 @@ accounts:
     - username: php
       uid: 65532
       gid: 65532
-  run-as: 65532
+  run-as: root
 
 archs:
   - x86_64
-  - aarch64
 
 annotations:
   "org.opencontainers.image.authors": "Chainguard Team https://www.chainguard.dev/"
