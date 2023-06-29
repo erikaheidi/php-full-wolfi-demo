@@ -10,10 +10,30 @@ contents:
     - busybox
     - apk-tools
     - php@local
-    - composer
+    - php-mbstring@local
+    - php-curl@local
+    - php-openssl@local
+    - php-opcache@local
+    - php-gd@local
+    - php-calendar@local
+    - php-phar@local
+    - php-soap@local
+    - php-sockets@local
+    - php-dom@local
+    - php-ldap@local
+    - php-gettext@local
+    - php-bz2@local
+    - php-gmp@local
+    - php-fpm@local
+    - php-pcntl@local
+    - php-mysqlnd@local
+    - php-pdo@local
+    - php-pdo_mysql@local
+    - php-exif@local
+    - php-xsl@local
 
 entrypoint:
-  command: /bin/php
+  command: /usr/bin/php
 
 environment:
   PATH: /usr/sbin:/sbin:/usr/bin:/bin

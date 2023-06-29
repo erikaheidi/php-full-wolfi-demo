@@ -44,6 +44,7 @@ environment:
       - openldap-dev
       - oniguruma-dev
       - libxslt-dev
+      - postgresql-15-dev
       - zip
 
 pipeline:
@@ -62,23 +63,26 @@ pipeline:
   - name: Configure
     runs: |
       set -x
-      export PHP_BUILD_HOME=$HOME/php-${{package.version}}
-      cd $PHP_BUILD_HOME
-      ./configure \
-        --prefix=${{targets.destdir}} \
-        --libdir=${{targets.destdir}}/lib/php \
-        --datadir=${{targets.destdir}}/usr/share/php \
-        --sysconfdir=${{targets.destdir}}/etc/php \
-        --localstatedir=${{targets.destdir}}/var \
+      cd $HOME/php-${{package.version}}
+      EXTENSION_DIR=/usr/lib/php/modules ./configure \
+        --prefix=/usr \
+        --libdir=/usr/lib/php \
+        --datadir=/usr/share/php \
+        --sysconfdir=/etc/php \
+        --localstatedir=/var \
         --with-layout=GNU \
         --with-pic \
-        --with-config-file-path=${{targets.destdir}}/etc/php \
-        --with-config-file-scan-dir=${{targets.destdir}}/etc/php/conf.d \
+        --with-config-file-path=/etc/php \
+        --with-config-file-scan-dir=/etc/php/conf.d \
         --enable-cli \
+        --enable-ctype=shared \
+        --enable-bcmath=shared \
         --with-curl=shared \
+        --enable-dom=shared \
+        --enable-fileinfo=shared \
+        --with-iconv=shared \
         --with-openssl=shared \
         --with-readline \
-        --with-zlib=shared \
         --with-sodium=shared \
         --enable-fpm \
         --with-pear \
@@ -89,9 +93,11 @@ pipeline:
             --with-webp \
             --with-xpm \
             --disable-gd-jis-conv \
-        --with-libxml=shared \
+        --with-libxml \
         --enable-phar=shared \
         --enable-mbstring=shared \
+      	--with-mysqli=shared \
+            --with-mysql-sock=/run/mysqld/mysqld.sock \
         --enable-mysqlnd=shared \
         --enable-pdo=shared \
             --with-pdo-mysql=shared,mysqlnd \
@@ -107,22 +113,32 @@ pipeline:
         --with-ldap=shared  \
         --enable-opcache=shared  \
         --enable-soap=shared  \
-        --with-xsl=shared
+        --with-xsl=shared \
+        --with-zlib \
+        --enable-xml=shared \
+        --enable-simplexml=shared \
+        --enable-xml=shared \
+        --enable-xmlreader=shared \
+        --enable-xmlwriter=shared \
+        --enable-posix=shared \
+        --with-pgsql=shared
 
   - uses: autoconf/make
     with:
       dir: $HOME/php-${{package.version}}
 
-  - uses: autoconf/make-install
-    with:
-      dir: $HOME/php-${{package.version}}
+  - name: Make Install
+    runs: |
+      set -x
+      cd $HOME/php-${{package.version}}
+      INSTALL_ROOT=${{targets.destdir}} DESTDIR=${{targets.destdir}} make install
 
   - uses: strip
 
   - name: Copy configuration
     runs: |
+      mkdir -p "${{targets.destdir}}/etc/php/conf.d"
       mv $HOME/php-${{package.version}}/php.ini-production ${{targets.destdir}}/etc/php/php.ini
-      sed -i 's/\/home\/build\/melange-out\/php//g' ${{targets.destdir}}/etc/php/php.ini
 
 data:
   - name: extensions
@@ -138,7 +154,6 @@ data:
       pdo_sqlite: SQLite 3.x driver for PDO
       soap: SOAP
       sodium: Sodium
-      zlib: Zlib
       calendar: Calendar
       exif: EXIF
       gettext: GetText
@@ -150,21 +165,34 @@ data:
       phar: PHP Archive
       sockets: Sockets
       xsl: XSL
+      bcmath: BC Math
+      ctype: ctype
+      iconv: Iconv
+      dom: DOM
+      pgsql: PostgreSQL
+      posix: Posix
+      simplexml: SimpleXML
+      mysqli: MySQLi
+      xml: XML
+      xmlreader: XMLReader
+      xmlwriter: XMLWriter
+      fileinfo: fileinfo
 
 subpackages:
-
   - range: extensions
     name: "php-${{range.key}}"
     description: "The ${{range.value}} extension"
     pipeline:
       - runs: |
-          set -x
-          EXTENSION_DIR=`${{targets.destdir}}/bin/php-config --extension-dir`
-          DEST_DIR=`echo $EXTENSION_DIR | sed 's/php/php-${{range.key}}/g'`
-          mkdir -p $DEST_DIR
-          mv "$EXTENSION_DIR/${{range.key}}.so"  "$DEST_DIR/${{range.key}}.so"
+          export EXTENSIONS_DIR=usr/lib/php/modules
+          export CONF_DIR="${{targets.subpkgdir}}/etc/php/conf.d"
+          mkdir -p "${{targets.subpkgdir}}"/$EXTENSIONS_DIR $CONF_DIR
+          mv "${{targets.destdir}}/$EXTENSIONS_DIR/${{range.key}}.so" \
+            "${{targets.subpkgdir}}/$EXTENSIONS_DIR/${{range.key}}.so"
+          prefix=
+          [ "${{range.key}}" != "opcache" ] || prefix="zend_"
+          echo "${prefix}extension=${{range.key}}.so" > $CONF_DIR/"${{range.key}}.ini"
 
-  #Executables
   - name: php-dev
     description: PHP 8.2 development headers
     pipeline:
@@ -175,24 +203,23 @@ subpackages:
     pipeline:
       - runs: |
           mkdir -p ${{targets.subpkgdir}}/usr/bin
-          mv ${{targets.destdir}}/bin/php-cgi ${{targets.subpkgdir}}/usr/bin/
+          mv ${{targets.destdir}}/usr/bin/php-cgi ${{targets.subpkgdir}}/usr/bin/
 
   - name: php-dbg
     description: Interactive PHP Debugger
     pipeline:
       - runs: |
           mkdir -p ${{targets.subpkgdir}}/usr/bin
-          mv ${{targets.destdir}}/bin/phpdbg ${{targets.subpkgdir}}/usr/bin/
+          mv ${{targets.destdir}}/usr/bin/phpdbg ${{targets.subpkgdir}}/usr/bin/
 
   - name: php-fpm
     description: PHP 8.2 FastCGI Process Manager (FPM)
     pipeline:
       - runs: |
           set -x
-          mkdir -p ${{targets.subpkgdir}}/usr/bin ${{targets.subpkgdir}}/etc/php/php-fpm.d
-          mv ${{targets.destdir}}/sbin/php-fpm ${{targets.subpkgdir}}/usr/bin/
+          mkdir -p ${{targets.subpkgdir}}/usr/sbin ${{targets.subpkgdir}}/etc/php/php-fpm.d
+          mv ${{targets.destdir}}/usr/sbin/php-fpm ${{targets.subpkgdir}}/usr/sbin/
           mv ${{targets.destdir}}/etc/php/php-fpm.conf.default ${{targets.subpkgdir}}/etc/php/php-fpm.conf
-          sed -i 's/\/home\/build\/melange-out\/php//g' ${{targets.subpkgdir}}/etc/php/php-fpm.conf
           mv ${{targets.destdir}}/etc/php/php-fpm.d/www.conf.default ${{targets.subpkgdir}}/etc/php/php-fpm.d/www.conf \
           && { \
           	echo '[global]'; \
